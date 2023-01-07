@@ -41,7 +41,7 @@ params = AttrDict(
     max_grad_norm=1.0,
 
     # Data params
-    sample_rate=22050,
+    sample_rate=16000,
     hop_samples=300,  # Don't change this. Really.
     crop_mel_frames=24,
 
