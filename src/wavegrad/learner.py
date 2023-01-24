@@ -17,6 +17,7 @@ import numpy as np
 import os
 import torch
 import torch.nn as nn
+import torchaudio.transforms as TT
 
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.tensorboard import SummaryWriter
@@ -53,7 +54,8 @@ class WaveGradLearner:
     noise_level = np.cumprod(1 - beta)**0.5
     noise_level = np.concatenate([[1.0], noise_level], axis=0)
     self.noise_level = torch.tensor(noise_level.astype(np.float32))
-    self.loss_fn = nn.L1Loss()
+    # self.loss_fn = nn.L1Loss
+    self.loss_fn = self.spectral_reconstruction_loss
     self.summary_writer = None
 
   def state_dict(self):
@@ -153,6 +155,35 @@ class WaveGradLearner:
     writer.flush()
     self.summary_writer = writer
 
+  def spectral_reconstruction_loss(self, reference, predicted):
+    params = self.params
+
+    sr = params.sample_rate
+    hop = params.hop_samples // 2
+    win = params.hop_samples * 4
+    n_fft = 2 ** ((win - 1).bit_length())
+    f_max = sr / 2.0
+    mel_spec_transform = TT.MelSpectrogram(
+      sample_rate=params.sample_rate,
+      n_fft=n_fft,
+      win_length=win,
+      hop_length=hop,
+      f_min=20.0,
+      f_max=f_max,
+      power=1.0,
+      normalized=True).cuda()
+    L = 0
+    for i in range(6, 12):
+      s = 2 ** i
+      alpha_s = (s / 2) ** 0.5
+      S_x = mel_spec_transform(reference)
+      S_G_x = mel_spec_transform(predicted)
+      eps = 1e-4
+      loss = (S_x - S_G_x).abs().sum() + alpha_s * (
+                ((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2) ** 0.5).sum()
+      L += loss
+    return L
+
 
 def _train_impl(replica_id, model, dataset, args, params):
   torch.backends.cudnn.benchmark = True
@@ -180,3 +211,4 @@ def train_distributed(replica_id, replica_count, port, args, params):
   model = WaveGrad(params).to(device)
   model = DistributedDataParallel(model, device_ids=[replica_id])
   _train_impl(replica_id, model, dataset_from_path(args.data_dirs, params, is_distributed=True), args, params)
+
