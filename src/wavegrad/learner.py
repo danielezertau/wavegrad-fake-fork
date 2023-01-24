@@ -111,7 +111,7 @@ class WaveGradLearner:
         if self.is_master:
           if self.step % 100 == 0:
             self._write_summary(self.step, features, loss)
-          if self.step % len(self.dataset) == 0:
+          if self.step % (10 * len(self.dataset)) == 0:
             self.save_to_checkpoint()
         self.step += 1
 
