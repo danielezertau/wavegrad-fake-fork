@@ -56,7 +56,8 @@ def predict(spectrogram, model_dir=None, params=None, device=torch.device('cuda'
     for n in range(len(alpha) - 1, -1, -1):
       c1 = 1 / alpha[n]**0.5
       c2 = (1 - alpha[n]) / (1 - alpha_cum[n])**0.5
-      audio = c1 * (audio - c2 * model(audio, spectrogram, noise_scale[n]).squeeze(1))
+      # audio = c1 * (audio - c2 * model(audio, spectrogram, noise_scale[n]).squeeze(1))
+      audio = model(audio, spectrogram, noise_scale[n]).squeeze(1)
       if n > 0:
         noise = torch.randn_like(audio)
         sigma = ((1.0 - alpha_cum[n-1]) / (1.0 - alpha_cum[n]) * beta[n])**0.5
