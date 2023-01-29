@@ -25,7 +25,7 @@ from tqdm import tqdm
 
 from wavegrad.dataset import from_path as dataset_from_path
 from wavegrad.model import WaveGrad
-from ddsp.losses import SpectralLoss
+# from ddsp.losses import SpectralLoss
 
 def _nested_map(struct, map_fn):
   if isinstance(struct, tuple):
@@ -55,8 +55,8 @@ class WaveGradLearner:
     noise_level = np.concatenate([[1.0], noise_level], axis=0)
     self.noise_level = torch.tensor(noise_level.astype(np.float32))
     # self.loss_fn = nn.L1Loss
-    # self.loss_fn = self.
-    self.loss_fn = SpectralLoss()
+    self.loss_fn = self.spectral_reconstruction_loss
+    # self.loss_fn = SpectralLoss()
     self.summary_writer = None
 
   def state_dict(self):
@@ -140,12 +140,12 @@ class WaveGradLearner:
 
       predicted = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
       # loss = self.loss_fn(noise, predicted.squeeze(1))
-      # loss = self.loss_fn(noisy_audio,predicted.squeeze(1))
+      loss = self.loss_fn(audio,predicted.squeeze(1))
 
 
       #DDSP LOSS
-      loss = self.loss_fn(noisy_audio.cpu().detach().numpy(), predicted.squeeze(1).cpu().detach().numpy())
-      loss =torch.tensor(loss.numpy(), requires_grad=True).to(device)
+      # loss = self.loss_fn(audio.cpu().detach().numpy(), predicted.squeeze(1).cpu().detach().numpy())
+      # loss =torch.tensor(loss.numpy(), requires_grad=True).to(device)
 
     self.scaler.scale(loss).backward()
     self.scaler.unscale_(self.optimizer)
