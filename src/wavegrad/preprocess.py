@@ -47,6 +47,7 @@ def transform(filename):
 
 def main(args):
   filenames = glob(f'{args.dir}/**/*.wav', recursive=True)
+  filenames += glob(f'{args.dir}/**/*.flac', recursive=True)
   with ProcessPoolExecutor() as executor:
     list(tqdm(executor.map(transform, filenames), desc='Preprocessing', total=len(filenames)))
 
