@@ -54,7 +54,7 @@ def _ls_mse(reference, predicted):
 
 
 def main(args):
-  audio_filenames = glob(f'{args.data_dir}/**/*.wav', recursive=True)
+  audio_filenames = glob(f'{args.data_dir}/**/*.[wav][flac]', recursive=True)
   audio_filenames = [f for f in audio_filenames if os.path.exists(f'{f}.spec.npy')]
   if len(audio_filenames) == 0:
     raise ValueError('No files found.')
