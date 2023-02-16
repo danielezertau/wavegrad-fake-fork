@@ -29,6 +29,7 @@ class NumpyDataset(torch.utils.data.Dataset):
     self.filenames = []
     for path in paths:
       self.filenames += glob(f'{path}/**/*.wav', recursive=True)
+      self.filenames += glob(f'{path}/**/*.flac', recursive=True)
 
   def __len__(self):
     return len(self.filenames)
