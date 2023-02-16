@@ -168,6 +168,7 @@ class WaveGradLearner:
     def spectral_reconstruction_loss(self, reference, predicted):
         sr = self.params.sample_rate
         L = 0
+        eps = 1e-4
         for i in range(6, 12):
             s = 2 ** i
             alpha_s = (s / 2) ** 0.5
@@ -181,9 +182,8 @@ class WaveGradLearner:
 
             S_x = mel_spec_transform(reference)
             S_G_x = mel_spec_transform(predicted)
-            eps = 1e-4
             loss = (S_x - S_G_x).abs().sum() + alpha_s * (
-                    ((torcsh.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2) ** 0.5).sum()
+                    ((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2) ** 0.5).sum()
             L += loss
         return L
 
