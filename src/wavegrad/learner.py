@@ -139,9 +139,9 @@ class WaveGradLearner:
             noise = torch.randn_like(audio)
             noise_coef = (1.0 - noise_scale ** 2) ** 0.5
             noisy_audio = noise_scale * audio + noise_coef * noise
-            predicted_audio = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
-            predicted_noise = (noisy_audio - noise_scale * predicted_audio) / noise_coef
-            loss = self.loss_fn(noise, predicted_noise.squeeze(1))
+            predicted_noise = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
+            predicted_audio = (noisy_audio - noise_coef * predicted_noise) / noise_scale
+            loss = self.loss_fn(audio, predicted_audio.squeeze(1))
 
         self.scaler.scale(loss).backward()
         self.scaler.unscale_(self.optimizer)
