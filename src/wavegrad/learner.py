@@ -27,8 +27,6 @@ from wavegrad.dataset import from_path as dataset_from_path
 from wavegrad.model import WaveGrad
 
 
-# from ddsp.losses import SpectralLoss
-
 def _nested_map(struct, map_fn):
     if isinstance(struct, tuple):
         return tuple(_nested_map(x, map_fn) for x in struct)
@@ -186,30 +184,30 @@ class WaveGradLearner:
         return L
 
 
-def _train_impl(replica_id, model, dataset, args, params):
-    torch.backends.cudnn.benchmark = True
-    opt = torch.optim.Adam(model.parameters(), lr=params.learning_rate)
-    sched = torch.optim.lr_scheduler.StepLR(opt, step_size=params.sched_step, gamma=params.sched_gamma)
+def _train_impl(replica_id, model, dataset, args, params, is_distributed):
+  torch.backends.cudnn.benchmark = True
+  opt = torch.optim.Adam(model.parameters(), lr=params.learning_rate)
+  sched = torch.optim.lr_scheduler.StepLR(opt, step_size=params.sched_step, gamma=params.sched_gamma)
 
-    learner = WaveGradLearner(args.model_dir, model, dataset, opt, sched, params, fp16=args.fp16)
-    learner.is_master = (replica_id == 0)
-    learner.restore_from_checkpoint()
-    learner.train(max_steps=args.max_steps)
+  learner = WaveGradLearner(args.model_dir, model, dataset, opt, sched, params, fp16=args.fp16)
+  learner.is_master = (replica_id == 0) if is_distributed else True
+  learner.restore_from_checkpoint()
+  learner.train(max_steps=args.max_steps)
 
 
 def train(args, params):
-    dataset = dataset_from_path(args.data_dirs, params)
-    model = WaveGrad(params).cuda()
-    _train_impl(0, model, dataset, args, params)
+  dataset = dataset_from_path(args.data_dirs, params)
+  model = WaveGrad(params).cuda()
+  _train_impl(os.environ['CUDA_VISIBLE_DEVICES'], model, dataset, args, params, is_distributed=False)
 
 
 def train_distributed(replica_id, replica_count, port, args, params):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = str(port)
-    torch.distributed.init_process_group('nccl', rank=replica_id, world_size=replica_count)
+  os.environ['MASTER_ADDR'] = 'localhost'
+  os.environ['MASTER_PORT'] = str(port)
+  torch.distributed.init_process_group('nccl', rank=replica_id, world_size=replica_count)
 
-    device = torch.device('cuda', replica_id)
-    torch.cuda.set_device(device)
-    model = WaveGrad(params).to(device)
-    model = DistributedDataParallel(model, device_ids=[replica_id])
-    _train_impl(replica_id, model, dataset_from_path(args.data_dirs, params, is_distributed=True), args, params)
+  device = torch.device('cuda', replica_id)
+  torch.cuda.set_device(device)
+  model = WaveGrad(params).to(device)
+  model = DistributedDataParallel(model, device_ids=[replica_id])
+  _train_impl(replica_id, model, dataset_from_path(args.data_dirs, params, is_distributed=True), args, params, is_distributed=True)
