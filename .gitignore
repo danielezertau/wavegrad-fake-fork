@@ -2,4 +2,15 @@
 venv/
 dataset
 results/
+models/
+music-inf/
+speech-inf/
 build/
+*.sh
+slurm/
+slurm_logs/
+lj-dataset
+run_slurm*.py
+src/wavegrad.egg-info/
+music-checkpoints/
+output.wav
