@@ -17,7 +17,7 @@ import numpy as np
 import os
 import torch
 import torch.nn as nn
-import torchaudio.transforms as TT
+from torchaudio.transforms import MelSpectrogram
 
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.tensorboard import SummaryWriter
@@ -166,22 +166,18 @@ class WaveGradLearner:
         self.summary_writer = writer
 
     def spectral_reconstruction_loss(self, reference, predicted):
-        sr = self.params.sample_rate
+        device = next(self.model.parameters()).device
         L = 0
         eps = 1e-4
         for i in range(6, 12):
             s = 2 ** i
             alpha_s = (s / 2) ** 0.5
             hop = s // 4
+            melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=8,
+                                     wkwargs={"device": device}).to(device)
+            S_x = melspec(reference)
+            S_G_x = melspec(predicted)
 
-            mel_spec_transform = TT.MelSpectrogram(
-                sample_rate=sr,
-                n_fft=s,
-                win_length=s, hop_length=hop,
-                n_mels=64).cuda()
-
-            S_x = mel_spec_transform(reference)
-            S_G_x = mel_spec_transform(predicted)
             loss = (S_x - S_G_x).abs().sum() + alpha_s * (
                     ((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2) ** 0.5).sum()
             L += loss
