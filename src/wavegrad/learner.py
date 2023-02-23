@@ -167,7 +167,7 @@ def _train_impl(replica_id, model, dataset, args, params, is_distributed):
 def train(args, params):
   dataset = dataset_from_path(args.data_dirs, params)
   model = WaveGrad(params).cuda()
-  _train_impl(os.environ['CUDA_VISIBLE_DEVICES'], model, dataset, args, params, is_distributed=False)
+  _train_impl(os.environ.get('CUDA_VISIBLE_DEVICES', 0), model, dataset, args, params, is_distributed=False)
 
 
 def train_distributed(replica_id, replica_count, port, args, params):
