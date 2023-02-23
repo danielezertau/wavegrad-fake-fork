@@ -40,12 +40,13 @@ def _nested_map(struct, map_fn):
 
 
 class WaveGradLearner:
-    def __init__(self, model_dir, model, dataset, optimizer, params, *args, **kwargs):
+    def __init__(self, model_dir, model, dataset, optimizer, scheduler, params, *args, **kwargs):
         os.makedirs(model_dir, exist_ok=True)
         self.model_dir = model_dir
         self.model = model
         self.dataset = dataset
         self.optimizer = optimizer
+        self.scheduler = scheduler
         self.params = params
         self.autocast = torch.cuda.amp.autocast(enabled=kwargs.get('fp16', False))
         self.scaler = torch.cuda.amp.GradScaler(enabled=kwargs.get('fp16', False))
@@ -155,6 +156,7 @@ class WaveGradLearner:
         self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm)
         self.scaler.step(self.optimizer)
         self.scaler.update()
+        self.scheduler.step()
         return loss
 
     def _write_summary(self, step, features, loss):
@@ -187,8 +189,9 @@ class WaveGradLearner:
 def _train_impl(replica_id, model, dataset, args, params):
     torch.backends.cudnn.benchmark = True
     opt = torch.optim.Adam(model.parameters(), lr=params.learning_rate)
+    sched = torch.optim.lr_scheduler.StepLR(opt, step_size=params.sched_step, gamma=params.sched_gamma)
 
-    learner = WaveGradLearner(args.model_dir, model, dataset, opt, params, fp16=args.fp16)
+    learner = WaveGradLearner(args.model_dir, model, dataset, opt, sched, params, fp16=args.fp16)
     learner.is_master = (replica_id == 0)
     learner.restore_from_checkpoint()
     learner.train(max_steps=args.max_steps)
