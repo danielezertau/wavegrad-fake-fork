@@ -17,7 +17,7 @@ import numpy as np
 import os
 import torch
 import torch.nn as nn
-import torchaudio.transforms as TT
+from torchaudio.transforms import MelSpectrogram
 
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.tensorboard import SummaryWriter
@@ -38,12 +38,13 @@ def _nested_map(struct, map_fn):
 
 
 class WaveGradLearner:
-    def __init__(self, model_dir, model, dataset, optimizer, params, *args, **kwargs):
+    def __init__(self, model_dir, model, dataset, optimizer, scheduler, params, *args, **kwargs):
         os.makedirs(model_dir, exist_ok=True)
         self.model_dir = model_dir
         self.model = model
         self.dataset = dataset
         self.optimizer = optimizer
+        self.scheduler = scheduler
         self.params = params
         self.autocast = torch.cuda.amp.autocast(enabled=kwargs.get('fp16', False))
         self.scaler = torch.cuda.amp.GradScaler(enabled=kwargs.get('fp16', False))
@@ -148,6 +149,7 @@ class WaveGradLearner:
         self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm)
         self.scaler.step(self.optimizer)
         self.scaler.update()
+        self.scheduler.step()
         return loss
 
     def _write_summary(self, step, features, loss):
@@ -159,22 +161,18 @@ class WaveGradLearner:
         self.summary_writer = writer
 
     def spectral_reconstruction_loss(self, reference, predicted):
-        sr = self.params.sample_rate
+        device = next(self.model.parameters()).device
         L = 0
         eps = 1e-4
         for i in range(6, 12):
             s = 2 ** i
             alpha_s = (s / 2) ** 0.5
             hop = s // 4
+            melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=8,
+                                     wkwargs={"device": device}).to(device)
+            S_x = melspec(reference)
+            S_G_x = melspec(predicted)
 
-            mel_spec_transform = TT.MelSpectrogram(
-                sample_rate=sr,
-                n_fft=s,
-                win_length=s, hop_length=hop,
-                n_mels=64).cuda()
-
-            S_x = mel_spec_transform(reference)
-            S_G_x = mel_spec_transform(predicted)
             loss = (S_x - S_G_x).abs().sum() + alpha_s * (
                     ((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2) ** 0.5).sum()
             L += loss
@@ -182,19 +180,20 @@ class WaveGradLearner:
 
 
 def _train_impl(replica_id, model, dataset, args, params, is_distributed):
-    torch.backends.cudnn.benchmark = True
-    opt = torch.optim.Adam(model.parameters(), lr=params.learning_rate)
+  torch.backends.cudnn.benchmark = True
+  opt = torch.optim.Adam(model.parameters(), lr=params.learning_rate)
+  sched = torch.optim.lr_scheduler.StepLR(opt, step_size=params.sched_step, gamma=params.sched_gamma)
 
-    learner = WaveGradLearner(args.model_dir, model, dataset, opt, params, fp16=args.fp16)
-    learner.is_master = (replica_id == 0) if is_distributed else True
-    learner.restore_from_checkpoint()
-    learner.train(max_steps=args.max_steps)
+  learner = WaveGradLearner(args.model_dir, model, dataset, opt, sched, params, fp16=args.fp16)
+  learner.is_master = (replica_id == 0) if is_distributed else True
+  learner.restore_from_checkpoint()
+  learner.train(max_steps=args.max_steps)
 
 
 def train(args, params):
-    dataset = dataset_from_path(args.data_dirs, params)
-    model = WaveGrad(params).cuda()
-    _train_impl(os.environ['CUDA_VISIBLE_DEVICES'], model, dataset, args, params, is_distributed=False)
+  dataset = dataset_from_path(args.data_dirs, params)
+  model = WaveGrad(params).cuda()
+  _train_impl(os.environ.get('CUDA_VISIBLE_DEVICES', 0), model, dataset, args, params, is_distributed=False)
 
 
 def train_distributed(replica_id, replica_count, port, args, params):
