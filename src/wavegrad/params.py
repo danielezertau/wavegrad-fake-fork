@@ -39,7 +39,7 @@ params = AttrDict(
     batch_size=32,
     learning_rate=2e-4,
     sched_gamma=0.1,
-    shced_step=100,
+    sched_step=100,
     max_grad_norm=1.0,
 
     # Data params
