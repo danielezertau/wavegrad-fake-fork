@@ -154,7 +154,7 @@ class WaveGradLearner:
         self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm)
         self.scaler.step(self.optimizer)
         self.scaler.update()
-        self.scheduler.step()
+        # self.scheduler.step()
         return loss
 
     def _write_summary(self, step, features, loss):
