@@ -110,7 +110,7 @@ class WaveGradLearner:
                                  desc=f'Epoch {self.step // len(self.dataset)}') if self.is_master else self.dataset:
                 if max_steps is not None and self.step >= max_steps:
                     return
-                self.optimizer.zero_grad()
+                # self.optimizer.zero_grad()
                 features = _nested_map(features, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
                 loss = self.train_step(features)
                 if torch.isnan(loss).any():
