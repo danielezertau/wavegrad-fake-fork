@@ -112,8 +112,7 @@ class WaveGradLearner:
                 features = _nested_map(features, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
                 loss = self.train_step(features)
                 if self.is_master:
-                    if self.step % 100 == 0:
-                        self._write_summary(self.step, features, loss)
+                    self._write_summary(self.step, features, loss)
                     if self.step % len(self.dataset) == 0:
                         self.save_to_checkpoint()
                 self.step += 1
