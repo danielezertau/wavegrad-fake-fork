@@ -113,7 +113,7 @@ class WaveGradLearner:
                 loss, predicted_audio = self.train_step(features)
                 if self.is_master:
                     if self.step % 100 == 0:
-                        self._write_summary(self.step, loss, predicted_audio)
+                        self._write_summary(self.step, features, loss)
                     if self.step % len(self.dataset) == 0:
                         self.save_to_checkpoint()
                 self.step += 1
@@ -150,11 +150,11 @@ class WaveGradLearner:
         self.scaler.step(self.optimizer)
         self.scaler.update()
         # self.scheduler.step()
-        return loss, predicted_audio
+        return loss
 
-    def _write_summary(self, step, loss, predicted_audio):
+    def _write_summary(self, step, features, loss):
         writer = self.summary_writer or SummaryWriter(self.model_dir, purge_step=step)
-        writer.add_audio('audio/reference', predicted_audio[0], step, sample_rate=self.params.sample_rate)
+        writer.add_audio('audio/reference', features['audio'][0], step, sample_rate=self.params.sample_rate)
         writer.add_scalar('train/loss', loss, step)
         writer.add_scalar('train/grad_norm', self.grad_norm, step)
         writer.flush()
