@@ -110,9 +110,7 @@ class WaveGradLearner:
                     return
                 self.optimizer.zero_grad()
                 features = _nested_map(features, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
-                loss = self.train_step(features)
-                if torch.isnan(loss).any():
-                    raise RuntimeError(f'Detected NaN loss at step {self.step}.')
+                loss, predicted_audio = self.train_step(features)
                 if self.is_master:
                     if self.step % 100 == 0:
                         self._write_summary(self.step, features, loss)
@@ -147,7 +145,8 @@ class WaveGradLearner:
 
         self.scaler.scale(loss).backward()
         self.scaler.unscale_(self.optimizer)
-        self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm)
+        self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm,
+                                                  error_if_nonfinite=True)
         self.scaler.step(self.optimizer)
         self.scaler.update()
         # self.scheduler.step()
