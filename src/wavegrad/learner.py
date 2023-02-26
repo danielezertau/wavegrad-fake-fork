@@ -165,7 +165,7 @@ class WaveGradLearner:
         L = 0
         eps = 1e-4
         window_lengths = range(6, 12)
-        loss_window_weights = [1e-7 for _ in window_lengths]
+        loss_window_weights = [1e-5 for _ in window_lengths]
         for i, loss_weight in zip(window_lengths, loss_window_weights):
             s = 2 ** i
             alpha_s = (s / 2) ** 0.5
