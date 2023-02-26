@@ -164,7 +164,9 @@ class WaveGradLearner:
         device = next(self.model.parameters()).device
         L = 0
         eps = 1e-4
-        for i in range(6, 12):
+        window_lengths = range(6, 12)
+        loss_window_weights = [1e-7 for _ in window_lengths]
+        for i, loss_weight in zip(window_lengths, loss_window_weights):
             s = 2 ** i
             alpha_s = (s / 2) ** 0.5
             hop = s // 4
@@ -173,8 +175,8 @@ class WaveGradLearner:
             S_x = melspec(reference)
             S_G_x = melspec(predicted)
 
-            loss = (S_x - S_G_x).abs().sum() + alpha_s * (
-                    ((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2) ** 0.5).sum()
+            loss = loss_weight * ((S_x - S_G_x).abs().sum() + alpha_s * (
+                    ((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2) ** 0.5).sum())
             L += loss
         return L
 
