@@ -174,7 +174,7 @@ class WaveGradLearner:
             s = 2 ** i
             alpha_s = (s / 2) ** 0.5
             hop = s // 4
-            melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=64,
+            melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=128,
                                      wkwargs={"device": device}).to(device)
             S_x = melspec(reference)
             S_G_x = melspec(predicted)
