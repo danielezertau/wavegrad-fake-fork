@@ -139,12 +139,12 @@ class WaveGradLearner:
             noise_coef = (1.0 - noise_scale ** 2) ** 0.5
             noisy_audio = noise_scale * audio + noise_coef * noise
             predicted_noise = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
+            print(f'MAX noise_scale: {torch.max(torch.abs(noise_scale))}')
+            print(f'MIN noise_scale: {torch.min(torch.abs(noise_scale))}')
             eps = 1e-7
             predicted_audio = (noisy_audio - noise_coef * predicted_noise) / (noise_scale + eps)
-            print(f'MAX noise_scale: {torch.max(noise_scale)}')
-            print(f'MIN noise_scale: {torch.min(noise_scale)}')
-            print(f'MAX predicted_audio: {torch.max(predicted_audio)}')
-            print(f'MIN predicted_audio: {torch.min(predicted_audio)}')
+            print(f'MAX predicted_audio: {torch.max(torch.abs(predicted_audio))}')
+            print(f'MIN predicted_audio: {torch.min(torch.abs(predicted_audio))}')
             loss = self.loss_fn(audio, predicted_audio.squeeze(1))
 
         self.scaler.scale(loss).backward()
