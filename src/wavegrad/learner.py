@@ -181,17 +181,18 @@ class WaveGradLearner:
         L = 0
         eps = 1e-4
         window_lengths = range(6, 12)
-        loss_window_weights = [1e-11, 1e-11, 1e-11, 1e-11, 1e-11]
+        loss_window_weights = [1e-9, 1e-9, 1e-9, 1e-9, 1e-9]
         for i, loss_weight in zip(window_lengths, loss_window_weights):
             s = 2 ** i
             alpha_s = (s / 2) ** 0.5
             hop = s // 4
             f_max = self.params.sample_rate / 2.0
-            melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=64, 
+            melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=64,
                                      f_min=20.0, f_max=f_max, power=1.0, normalized=True,
                                      wkwargs={"device": device}).to(device)
-            S_x = melspec(reference)
-            S_G_x = melspec(predicted)
+            spec_eps = 1e-5
+            S_x = melspec(reference) + spec_eps
+            S_G_x = melspec(predicted) + spec_eps
             if torch.isnan(S_x).any() or torch.isnan(S_G_x).any():
                 print("Found NAN in spectrogram!")
             loss = loss_weight * ((S_x - S_G_x).abs().sum() + alpha_s * (
