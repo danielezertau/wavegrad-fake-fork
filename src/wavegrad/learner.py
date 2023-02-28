@@ -111,6 +111,8 @@ class WaveGradLearner:
                 self.optimizer.zero_grad()
                 features = _nested_map(features, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
                 loss = self.train_step(features)
+                if torch.isnan(loss).any():
+                    raise RuntimeError(f'Detected NaN loss at step {self.step}.')
                 if self.is_master:
                     if self.step % 100 == 0:
                         self._write_summary(self.step, features, loss)
@@ -143,18 +145,14 @@ class WaveGradLearner:
             predicted_audio = (noisy_audio - noise_coef * predicted_noise) / noise_scale
             loss = self.loss_fn(audio, predicted_audio.squeeze(1))
 
-        print(f'Grad norm before scale: {self.get_gradient_norm()}')
         self.scaler.scale(loss).backward()
         print(f'Grad norm after scale: {self.get_gradient_norm()}')
         self.scaler.unscale_(self.optimizer)
         print(f'Grad norm after unscale: {self.get_gradient_norm()}')
-        self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.params.max_grad_norm,
-                                                  error_if_nonfinite=True)
+        self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm)
         print(f'Grad norm after clip: {self.get_gradient_norm()}')
         self.scaler.step(self.optimizer)
-        print(f'Grad norm after step: {self.get_gradient_norm()}')
         self.scaler.update()
-        print(f'Grad norm after update: {self.get_gradient_norm()}')
         # self.scheduler.step()
         return loss
 
