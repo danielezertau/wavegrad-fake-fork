@@ -47,7 +47,6 @@ class WaveGradLearner:
         self.scheduler = scheduler
         self.params = params
         self.autocast = torch.cuda.amp.autocast(enabled=kwargs.get('fp16', False))
-        self.scaler = torch.cuda.amp.GradScaler(enabled=kwargs.get('fp16', False))
         self.step = 0
         self.is_master = True
 
@@ -69,7 +68,6 @@ class WaveGradLearner:
             'optimizer': {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in
                           self.optimizer.state_dict().items()},
             'params': dict(self.params),
-            'scaler': self.scaler.state_dict(),
         }
 
     def load_state_dict(self, state_dict):
@@ -78,7 +76,6 @@ class WaveGradLearner:
         else:
             self.model.load_state_dict(state_dict['model'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
-        self.scaler.load_state_dict(state_dict['scaler'])
         self.step = state_dict['step']
 
     def save_to_checkpoint(self, filename='weights'):
@@ -143,18 +140,13 @@ class WaveGradLearner:
             predicted_audio = (noisy_audio - noise_coef * predicted_noise) / noise_scale
             loss = self.loss_fn(audio, predicted_audio.squeeze(1))
 
-        print(f'Grad norm before scale: {self.get_gradient_norm()}')
-        self.scaler.scale(loss).backward()
-        print(f'Grad norm after scale: {self.get_gradient_norm()}')
-        self.scaler.unscale_(self.optimizer)
-        print(f'Grad norm after unscale: {self.get_gradient_norm()}')
+        loss.backward()
+        print(f'Grad norm after backward: {self.get_gradient_norm()}')
         self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.params.max_grad_norm,
                                                   error_if_nonfinite=True)
         print(f'Grad norm after clip: {self.get_gradient_norm()}')
-        self.scaler.step(self.optimizer)
+        self.optimizer.step()
         print(f'Grad norm after step: {self.get_gradient_norm()}')
-        self.scaler.update()
-        print(f'Grad norm after update: {self.get_gradient_norm()}')
         # self.scheduler.step()
         return loss
 
