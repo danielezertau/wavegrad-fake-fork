@@ -108,6 +108,7 @@ class WaveGradLearner:
                                  desc=f'Epoch {self.step // len(self.dataset)}') if self.is_master else self.dataset:
                 if max_steps is not None and self.step >= max_steps:
                     return
+                self.optimizer.zero_grad()
                 features = _nested_map(features, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
                 loss = self.train_step(features)
                 if self.is_master:
@@ -139,17 +140,12 @@ class WaveGradLearner:
             noise_coef = (1.0 - noise_scale ** 2) ** 0.5
             noisy_audio = noise_scale * audio + noise_coef * noise
             predicted_noise = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
-            print(f'MAX noise_scale: {torch.max(torch.abs(noise_scale))}')
-            print(f'MIN noise_scale: {torch.min(torch.abs(noise_scale))}')
-            eps = 1e-6
-            predicted_audio = (noisy_audio - noise_coef * predicted_noise) / (noise_scale + eps)
-            print(f'MAX predicted_audio: {torch.max(torch.abs(predicted_audio))}')
-            print(f'MIN predicted_audio: {torch.min(torch.abs(predicted_audio))}')
+            predicted_audio = (noisy_audio - noise_coef * predicted_noise) / noise_scale
             loss = self.loss_fn(audio, predicted_audio.squeeze(1))
 
         self.scaler.scale(loss).backward()
         self.scaler.unscale_(self.optimizer)
-        self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm,
+        self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.params.max_grad_norm,
                                                   error_if_nonfinite=True)
         self.scaler.step(self.optimizer)
         self.scaler.update()
