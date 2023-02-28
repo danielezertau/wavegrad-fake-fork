@@ -147,11 +147,19 @@ class WaveGradLearner:
         self.scaler.unscale_(self.optimizer)
         self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.params.max_grad_norm,
                                                   error_if_nonfinite=True)
-        print(f'Grad norm: {self.grad_norm}')
+        print(f'Grad norm: {self.get_gradient_norm()}')
         self.scaler.step(self.optimizer)
         self.scaler.update()
         # self.scheduler.step()
         return loss
+
+    def get_gradient_norm(self):
+        total_norm = 0
+        for p in self.model.parameters():
+            param_norm = p.grad.data.norm(2)
+            total_norm += param_norm.item() ** 2
+        total_norm = total_norm ** (1. / 2)
+        return total_norm
 
     def _write_summary(self, step, features, loss):
         writer = self.summary_writer or SummaryWriter(self.model_dir, purge_step=step)
