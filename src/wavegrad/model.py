@@ -181,12 +181,15 @@ class WaveGrad(nn.Module):
     downsampled = []
     for i, (film, layer) in enumerate(zip(self.film, self.downsample)):
       x = layer(x)
-      print(f"Layer {i} output: {x}")
+      print(f"Downsampling layer {i} output: {x}")
       downsampled.append(film(x, noise_scale))
       print(f"Film output: {downsampled[-1]}")
 
     x = self.first_conv(spectrogram)
+    i = 0
     for layer, (film_shift, film_scale) in zip(self.upsample, reversed(downsampled)):
       x = layer(x, film_shift, film_scale)
+      print(f"Upsampling layer {i} output: {x}")
+      i += 1
     x = self.last_conv(x)
     return x
