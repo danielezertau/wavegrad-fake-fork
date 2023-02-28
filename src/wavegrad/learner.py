@@ -136,7 +136,8 @@ class WaveGradLearner:
         noise = torch.randn_like(audio)
         noise_coef = (1.0 - noise_scale ** 2) ** 0.5
         noisy_audio = noise_scale * audio + noise_coef * noise
-        predicted_noise = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
+        eps = 1e-5
+        predicted_noise = self.model(noisy_audio, spectrogram + eps, noise_scale.squeeze(1))
         if torch.isnan(predicted_noise).any():
             print("Found NAN in predicted_noise")
             print(f'predicted_noise: {predicted_noise}')
@@ -181,7 +182,7 @@ class WaveGradLearner:
         L = 0
         eps = 1e-4
         window_lengths = range(6, 12)
-        loss_window_weights = [1e-9, 1e-9, 1e-9, 1e-9, 1e-9]
+        loss_window_weights = [1e-8, 1e-8, 1e-8, 1e-8, 1e-8]
         for i, loss_weight in zip(window_lengths, loss_window_weights):
             s = 2 ** i
             alpha_s = (s / 2) ** 0.5
@@ -190,9 +191,8 @@ class WaveGradLearner:
             melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=64,
                                      f_min=20.0, f_max=f_max, power=1.0, normalized=True,
                                      wkwargs={"device": device}).to(device)
-            spec_eps = 1e-5
-            S_x = melspec(reference) + spec_eps
-            S_G_x = melspec(predicted) + spec_eps
+            S_x = melspec(reference)
+            S_G_x = melspec(predicted)
             if torch.isnan(S_x).any() or torch.isnan(S_G_x).any():
                 print("Found NAN in spectrogram!")
             loss = loss_weight * ((S_x - S_G_x).abs().sum() + alpha_s * (
