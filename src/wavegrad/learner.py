@@ -46,6 +46,7 @@ class WaveGradLearner:
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.params = params
+        self.autocast = torch.cuda.amp.autocast(enabled=kwargs.get('fp16', False))
         self.step = 0
         self.is_master = True
 
@@ -126,17 +127,18 @@ class WaveGradLearner:
         device = audio.device
         self.noise_level = self.noise_level.to(device)
 
-        s = torch.randint(1, S + 1, [N], device=audio.device)
-        l_a, l_b = self.noise_level[s - 1], self.noise_level[s]
-        noise_scale = l_a + torch.rand(N, device=audio.device) * (l_b - l_a)
-        noise_scale = noise_scale.unsqueeze(1)
+        with self.autocast:
+            s = torch.randint(1, S + 1, [N], device=audio.device)
+            l_a, l_b = self.noise_level[s - 1], self.noise_level[s]
+            noise_scale = l_a + torch.rand(N, device=audio.device) * (l_b - l_a)
+            noise_scale = noise_scale.unsqueeze(1)
 
-        noise = torch.randn_like(audio)
-        noise_coef = (1.0 - noise_scale ** 2) ** 0.5
-        noisy_audio = noise_scale * audio + noise_coef * noise
-        predicted_noise = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
-        predicted_audio = (noisy_audio - noise_coef * predicted_noise) / noise_scale
-        loss = self.loss_fn(audio, predicted_audio.squeeze(1))
+            noise = torch.randn_like(audio)
+            noise_coef = (1.0 - noise_scale ** 2) ** 0.5
+            noisy_audio = noise_scale * audio + noise_coef * noise
+            predicted_noise = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
+            predicted_audio = (noisy_audio - noise_coef * predicted_noise) / noise_scale
+            loss = self.loss_fn(audio, predicted_audio.squeeze(1))
 
         loss.backward()
         print(f'Grad norm after backward: {self.get_gradient_norm()}')
