@@ -147,6 +147,7 @@ class WaveGradLearner:
         self.scaler.unscale_(self.optimizer)
         self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.params.max_grad_norm,
                                                   error_if_nonfinite=True)
+        print(f'Grad norm: {self.grad_norm}')
         self.scaler.step(self.optimizer)
         self.scaler.update()
         # self.scheduler.step()
@@ -166,7 +167,6 @@ class WaveGradLearner:
         eps = 1e-4
         window_lengths = range(6, 12)
         loss_window_weights = [1e-7, 1e-7, 1e-7, 1e-8, 1e-8]
-        print(f'Grad norm: {self.grad_norm}')
         for i, loss_weight in zip(window_lengths, loss_window_weights):
             s = 2 ** i
             alpha_s = (s / 2) ** 0.5
