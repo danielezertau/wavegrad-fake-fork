@@ -159,6 +159,8 @@ class WaveGradLearner:
         return loss
 
     def get_gradient_norm(self):
+        if self.step == 0:
+            return
         total_norm = 0
         for p in self.model.parameters():
             param_norm = p.grad.data.norm(2)
