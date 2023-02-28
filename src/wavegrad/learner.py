@@ -143,13 +143,18 @@ class WaveGradLearner:
             predicted_audio = (noisy_audio - noise_coef * predicted_noise) / noise_scale
             loss = self.loss_fn(audio, predicted_audio.squeeze(1))
 
+        print(f'Grad norm before scale: {self.get_gradient_norm()}')
         self.scaler.scale(loss).backward()
+        print(f'Grad norm after scale: {self.get_gradient_norm()}')
         self.scaler.unscale_(self.optimizer)
+        print(f'Grad norm after unscale: {self.get_gradient_norm()}')
         self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.params.max_grad_norm,
                                                   error_if_nonfinite=True)
-        print(f'Grad norm: {self.get_gradient_norm()}')
+        print(f'Grad norm after clip: {self.get_gradient_norm()}')
         self.scaler.step(self.optimizer)
+        print(f'Grad norm after step: {self.get_gradient_norm()}')
         self.scaler.update()
+        print(f'Grad norm after update: {self.get_gradient_norm()}')
         # self.scheduler.step()
         return loss
 
