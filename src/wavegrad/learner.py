@@ -137,14 +137,14 @@ class WaveGradLearner:
         noise_coef = (1.0 - noise_scale ** 2) ** 0.5
         noisy_audio = noise_scale * audio + noise_coef * noise
         eps = 1e-5
-        predicted_noise = self.model(noisy_audio, spectrogram + eps, noise_scale.squeeze(1))
+        predicted_noise = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
         if torch.isnan(predicted_noise).any():
             print("Found NAN in predicted_noise")
             print(f'predicted_noise: {predicted_noise}')
             print(f'noisy_audio: {noisy_audio}')
             print(f'spectrogram: {spectrogram}')
             print(f'noise_scale: {noise_scale}')
-        predicted_audio = (noisy_audio - noise_coef * predicted_noise) / noise_scale
+        predicted_audio = (noisy_audio - (noise_coef * predicted_noise)) / (noise_scale + eps)
         loss = self.loss_fn(audio, predicted_audio.squeeze(1))
 
         loss.backward()
