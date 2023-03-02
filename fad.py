@@ -3,6 +3,7 @@ import numpy as np
 import soundfile as sf
 from scipy import linalg
 import librosa
+import os
 
 
 def _stable_trace_sqrt_product(sigma_test, sigma_train, eps=1e-7):
@@ -52,37 +53,12 @@ def frechet(mu1, sig1, mu2, sig2):
     return frob + np.trace(sig1) + np.trace(sig2) - 2 * tr_sqrt
 
 
-if __name__ == '__main__':
-    # Load the model.
+def calc_fad(predictions, ground_truth):
+    # Load VGGish.
     model = hub.load('https://tfhub.dev/google/vggish/1')
-    print('loaded model')
 
-    eval_files = [
-        "./recon128/output-The.wav"]
-    # "./recon128/output-Pink.wav"]
-    # "./recon128/output-David.wav"]
-    # "./recon128/output-Children's.wav"]
-    # "./recon128/output-Beethoven.wav"]
-    # "./recon128/output-Queen.wav"]
-    # "./recon128/output-Come.wav"]
-    # "./recon128/output-FranzSchubert-SonataInAMinorD.784-02-Andante.wav"]
-    # "./recon128/output-Here.wav"]
-    # "./recon128/output-Bach.wav"]# model prediction
-
-    bg_files = [
-        "./IdeaProjects/wavegrad-fake-fork/music-inf/The Well Tempered Clavier, Book I, BWV 846-869 - Fugue No.2 in C minor, BWV 847 Short.flac"]
-    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Pink Floyd - Money - Pink Floyd HD (Studio Version) Short.flac"]
-    # "./IdeaProjects/wavegrad-fake-fork/music-inf/David Bowie - Changes Short.flac"]
-    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Children's Corner, L. 113 - I. Doctor Gradus ad Parnassum Short.flac"]
-    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Beethoven - Symphony No. 9 in D minor, Op. 125 - II. Scherzo_ Molto Vivace - Presto Short.flac"]
-    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Queen - I Want To Break Free Short.flac"]
-    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Come Together (Remastered 2009) Short.flac"]
-    # "./IdeaProjects/wavegrad-fake-fork/music-inf/FranzSchubert-SonataInAMinorD.784-02-Andante Short.flac"]
-    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Here Majesty (Remastered 2009).flac"]
-    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Bach - Cello Suite No.5 6-Gigue Short.flac"]  # ground truth or target
-
-    eval_embeddings = get_embeddings(eval_files, model)
-    bg_embeddings = get_embeddings(bg_files, model)
+    eval_embeddings = get_embeddings([predictions], model)
+    bg_embeddings = get_embeddings([ground_truth], model)
 
     mu_e = eval_embeddings.mean(axis=0)
     sigma_e = np.cov(eval_embeddings, rowvar=False)
@@ -90,5 +66,37 @@ if __name__ == '__main__':
     mu_bg = bg_embeddings.mean(axis=0)
     sigma_bg = np.cov(bg_embeddings, rowvar=False)
     frechet_dist = frechet(mu_e, sigma_e, mu_bg, sigma_bg)
-    print('frechet', frechet_dist)
-    print('done.')
+    return frechet_dist
+
+
+if __name__ == '__main__':
+    eval_files = [
+        "./recon128/output-The.wav",
+        "./recon128/output-Pink.wav",
+        "./recon128/output-David.wav",
+        "./recon128/output-Children's.wav",
+        "./recon128/output-Beethoven.wav",
+        "./recon128/output-Queen.wav",
+        "./recon128/output-Come.wav",
+        "./recon128/output-FranzSchubert-SonataInAMinorD.784-02-Andante.wav",
+        "./recon128/output-Here.wav",
+        "./recon128/output-Bach.wav"]  # model prediction
+
+    bg_files = [
+        "./music-inf/The Well Tempered Clavier, Book I, BWV 846-869 - Fugue No.2 in C minor, BWV 847 Short.flac",
+        "./music-inf/Pink Floyd - Money - Pink Floyd HD (Studio Version) Short.flac",
+        "./music-inf/David Bowie - Changes Short.flac",
+        "./music-inf/Children's Corner, L. 113 - I. Doctor Gradus ad Parnassum Short.flac",
+        "./music-inf/Beethoven - Symphony No. 9 in D minor, Op. 125 - II. Scherzo_ Molto Vivace - Presto Short.flac",
+        "./music-inf/Queen - I Want To Break Free Short.flac",
+        "./music-inf/Come Together (Remastered 2009) Short.flac",
+        "./music-inf/FranzSchubert-SonataInAMinorD.784-02-Andante Short.flac",
+        "./music-inf/Here Majesty (Remastered 2009).flac",
+        "./music-inf/Bach - Cello Suite No.5 6-Gigue Short.flac"]  # ground truth or target
+
+    fad_results = []
+    for predicted, reference in zip(eval_files, bg_files):
+        fad_results.append(calc_fad(predicted, reference))
+    np.set_printoptions(precision=3)
+    fad_results = np.array(fad_results)
+    print(f'{np.mean(fad_results)} +- {np.std(fad_results)}')
