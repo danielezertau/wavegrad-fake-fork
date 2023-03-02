@@ -70,29 +70,31 @@ def calc_fad(predictions, ground_truth):
 
 
 if __name__ == '__main__':
+    model_results_directory = "./recon128"
     eval_files = [
-        "./recon128/output-The.wav",
-        "./recon128/output-Pink.wav",
-        "./recon128/output-David.wav",
-        "./recon128/output-Children's.wav",
-        "./recon128/output-Beethoven.wav",
-        "./recon128/output-Queen.wav",
-        "./recon128/output-Come.wav",
-        "./recon128/output-FranzSchubert-SonataInAMinorD.784-02-Andante.wav",
-        "./recon128/output-Here.wav",
-        "./recon128/output-Bach.wav"]  # model prediction
+        f"{model_results_directory}/output-The.wav",
+        f"{model_results_directory}/output-Pink.wav",
+        f"{model_results_directory}/output-David.wav",
+        f"{model_results_directory}/output-Children's.wav",
+        f"{model_results_directory}/output-Beethoven.wav",
+        f"{model_results_directory}/output-Queen.wav",
+        f"{model_results_directory}/output-Come.wav",
+        f"{model_results_directory}/output-FranzSchubert-SonataInAMinorD.784-02-Andante.wav",
+        f"{model_results_directory}/output-Here.wav",
+        f"{model_results_directory}/output-Bach.wav"]  # model prediction
 
+    inf_dir = "./music-inf"
     bg_files = [
-        "./music-inf/The Well Tempered Clavier, Book I, BWV 846-869 - Fugue No.2 in C minor, BWV 847 Short.flac",
-        "./music-inf/Pink Floyd - Money - Pink Floyd HD (Studio Version) Short.flac",
-        "./music-inf/David Bowie - Changes Short.flac",
-        "./music-inf/Children's Corner, L. 113 - I. Doctor Gradus ad Parnassum Short.flac",
-        "./music-inf/Beethoven - Symphony No. 9 in D minor, Op. 125 - II. Scherzo_ Molto Vivace - Presto Short.flac",
-        "./music-inf/Queen - I Want To Break Free Short.flac",
-        "./music-inf/Come Together (Remastered 2009) Short.flac",
-        "./music-inf/FranzSchubert-SonataInAMinorD.784-02-Andante Short.flac",
-        "./music-inf/Here Majesty (Remastered 2009).flac",
-        "./music-inf/Bach - Cello Suite No.5 6-Gigue Short.flac"]  # ground truth or target
+        f"{inf_dir}/The Well Tempered Clavier, Book I, BWV 846-869 - Fugue No.2 in C minor, BWV 847 Short.flac",
+        f"{inf_dir}/Pink Floyd - Money - Pink Floyd HD (Studio Version) Short.flac",
+        f"{inf_dir}/David Bowie - Changes Short.flac",
+        f"{inf_dir}/Children's Corner, L. 113 - I. Doctor Gradus ad Parnassum Short.flac",
+        f"{inf_dir}/Beethoven - Symphony No. 9 in D minor, Op. 125 - II. Scherzo_ Molto Vivace - Presto Short.flac",
+        f"{inf_dir}/Queen - I Want To Break Free Short.flac",
+        f"{inf_dir}/Come Together (Remastered 2009) Short.flac",
+        f"{inf_dir}/FranzSchubert-SonataInAMinorD.784-02-Andante Short.flac",
+        f"{inf_dir}/Here Majesty (Remastered 2009).flac",
+        f"{inf_dir}/Bach - Cello Suite No.5 6-Gigue Short.flac"]  # ground truth or target
 
     fad_results = []
     for predicted, reference in zip(eval_files, bg_files):
