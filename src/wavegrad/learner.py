@@ -196,7 +196,7 @@ class WaveGradLearner:
             if torch.isnan(S_x).any() or torch.isnan(S_G_x).any():
                 print("Found NAN in spectrogram!")
             loss = loss_weight * ((S_x - S_G_x).abs().sum() + alpha_s * (
-                    ((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2) ** 0.5).sum())
+                    (((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2) + eps) ** 0.5).sum())
             print(f'Loss for window length {s} is {loss}')
             L += loss
         return L
