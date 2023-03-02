@@ -1,5 +1,3 @@
-import soundfile
-import tensorflow as tf
 import tensorflow_hub as hub
 import numpy as np
 import soundfile as sf
@@ -54,72 +52,34 @@ def frechet(mu1, sig1, mu2, sig2):
     return frob + np.trace(sig1) + np.trace(sig2) - 2 * tr_sqrt
 
 
-def soundstream(input_file_name, output_file_name):
-    module = hub.KerasLayer('https://tfhub.dev/google/soundstream/mel/decoder/music/1')
-
-    SAMPLE_RATE = 16000
-    N_FFT = 1024
-    HOP_LENGTH = 320
-    WIN_LENGTH = 640
-    N_MEL_CHANNELS = 128
-    MEL_FMIN = 0.0
-    MEL_FMAX = int(SAMPLE_RATE // 2)
-    CLIP_VALUE_MIN = 1e-5
-    CLIP_VALUE_MAX = 1e8
-
-    MEL_BASIS = tf.signal.linear_to_mel_weight_matrix(
-        num_mel_bins=N_MEL_CHANNELS,
-        num_spectrogram_bins=N_FFT // 2 + 1,
-        sample_rate=SAMPLE_RATE,
-        lower_edge_hertz=MEL_FMIN,
-        upper_edge_hertz=MEL_FMAX)
-
-    def calculate_spectrogram(samples):
-        """Calculate mel spectrogram using the parameters the model expects."""
-        fft = tf.signal.stft(
-            samples,
-            frame_length=WIN_LENGTH,
-            frame_step=HOP_LENGTH,
-            fft_length=N_FFT,
-            window_fn=tf.signal.hann_window,
-            pad_end=True)
-        fft_modulus = tf.abs(fft)
-
-        output = tf.matmul(fft_modulus, MEL_BASIS)
-
-        output = tf.clip_by_value(
-            output,
-            clip_value_min=CLIP_VALUE_MIN,
-            clip_value_max=CLIP_VALUE_MAX)
-        output = tf.math.log(output)
-        return output
-
-    # Load a music sample from the GTZAN dataset.
-    samples, _ = soundfile.read(input_file_name, dtype=np.float32)
-    # Convert an example from int to float.
-    # samples = tf.cast(audio / 32768, dtype=tf.float32)
-    # Add batch dimension.
-    samples = tf.expand_dims(samples, axis=0)
-    # Compute a mel-spectrogram.
-    spectrogram = calculate_spectrogram(samples)
-    # Reconstruct the audio from a mel-spectrogram using a SoundStream decoder.
-    reconstructed_samples = module(spectrogram).numpy().squeeze()
-    sf.write(output_file_name, reconstructed_samples, samplerate=SAMPLE_RATE, format='flac', subtype="PCM_24")
-
-
 if __name__ == '__main__':
     # Load the model.
     model = hub.load('https://tfhub.dev/google/vggish/1')
     print('loaded model')
 
-    # Create SoundStream output file
-    soundstream_output_file = './soundstream-cello.flac'
-    soundstream_input_file = "/Users/danielezer/IdeaProjects/wavegrad-fake-fork/music-inf/Bach - Cello Suite No.5 6-Gigue Short.flac"
-    soundstream(soundstream_input_file, soundstream_output_file)
+    eval_files = [
+        "./recon128/output-The.wav"]
+    # "./recon128/output-Pink.wav"]
+    # "./recon128/output-David.wav"]
+    # "./recon128/output-Children's.wav"]
+    # "./recon128/output-Beethoven.wav"]
+    # "./recon128/output-Queen.wav"]
+    # "./recon128/output-Come.wav"]
+    # "./recon128/output-FranzSchubert-SonataInAMinorD.784-02-Andante.wav"]
+    # "./recon128/output-Here.wav"]
+    # "./recon128/output-Bach.wav"]# model prediction
 
-    eval_files = [soundstream_output_file]  # model prediction
-
-    bg_files = [soundstream_input_file]  # ground truth or target
+    bg_files = [
+        "./IdeaProjects/wavegrad-fake-fork/music-inf/The Well Tempered Clavier, Book I, BWV 846-869 - Fugue No.2 in C minor, BWV 847 Short.flac"]
+    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Pink Floyd - Money - Pink Floyd HD (Studio Version) Short.flac"]
+    # "./IdeaProjects/wavegrad-fake-fork/music-inf/David Bowie - Changes Short.flac"]
+    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Children's Corner, L. 113 - I. Doctor Gradus ad Parnassum Short.flac"]
+    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Beethoven - Symphony No. 9 in D minor, Op. 125 - II. Scherzo_ Molto Vivace - Presto Short.flac"]
+    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Queen - I Want To Break Free Short.flac"]
+    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Come Together (Remastered 2009) Short.flac"]
+    # "./IdeaProjects/wavegrad-fake-fork/music-inf/FranzSchubert-SonataInAMinorD.784-02-Andante Short.flac"]
+    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Here Majesty (Remastered 2009).flac"]
+    # "./IdeaProjects/wavegrad-fake-fork/music-inf/Bach - Cello Suite No.5 6-Gigue Short.flac"]  # ground truth or target
 
     eval_embeddings = get_embeddings(eval_files, model)
     bg_embeddings = get_embeddings(bg_files, model)
