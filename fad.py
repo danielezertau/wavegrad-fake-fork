@@ -70,7 +70,7 @@ def calc_fad(predictions, ground_truth):
 
 
 if __name__ == '__main__':
-    model_results_directory = "./recon128"
+    model_results_directory = "./results/griffin-lim"
     eval_files = [
         f"{model_results_directory}/output-The.wav",
         f"{model_results_directory}/output-Pink.wav",
