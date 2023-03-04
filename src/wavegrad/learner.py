@@ -137,7 +137,6 @@ class WaveGradLearner:
       noise = torch.randn_like(audio)
       noise_coef = (1.0 - noise_scale ** 2) ** 0.5
       noisy_audio = noise_scale * audio + noise_coef * noise
-      eps = 1e-5
       predicted_noise = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
       if torch.isnan(predicted_noise).any():
           print("Found NAN in predicted_noise")
@@ -145,7 +144,7 @@ class WaveGradLearner:
           print(f'noisy_audio: {noisy_audio}')
           print(f'spectrogram: {spectrogram}')
           print(f'noise_scale: {noise_scale}')
-      predicted_audio = (noisy_audio - (noise_coef * predicted_noise)) / (noise_scale + eps)
+      predicted_audio = (noisy_audio - (noise_coef * predicted_noise)) / noise_scale
       loss = self.loss_fn(audio, predicted_audio.squeeze(1))
 
     self.scaler.scale(loss).backward()
@@ -189,16 +188,14 @@ class WaveGradLearner:
           s = 2 ** i
           alpha_s = (s / 2) ** 0.5
           hop = s // 4
-          f_max = self.params.sample_rate / 2.0
-          melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=64,
-                                   f_min=20.0, f_max=f_max, power=1.0, normalized=True,
+          melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=128,
                                    wkwargs={"device": device}).to(device)
           S_x = melspec(reference)
           S_G_x = melspec(predicted)
           if torch.isnan(S_x).any() or torch.isnan(S_G_x).any():
               print("Found NAN in spectrogram!")
-          loss = loss_weight * ((((S_x - S_G_x).abs().sum()) ** 2) + alpha_s * (
-                  ((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2)).sum())
+          loss = loss_weight * (((S_x - S_G_x).abs().sum()) + alpha_s * (
+                  (((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2) + eps) ** 0.5).sum())
           print(f'Loss for window length {s} is {loss}')
           L += loss
       return L
