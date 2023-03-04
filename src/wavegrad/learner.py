@@ -28,186 +28,187 @@ from wavegrad.model import WaveGrad
 
 
 def _nested_map(struct, map_fn):
-    if isinstance(struct, tuple):
-        return tuple(_nested_map(x, map_fn) for x in struct)
-    if isinstance(struct, list):
-        return [_nested_map(x, map_fn) for x in struct]
-    if isinstance(struct, dict):
-        return {k: _nested_map(v, map_fn) for k, v in struct.items()}
-    return map_fn(struct)
+  if isinstance(struct, tuple):
+    return tuple(_nested_map(x, map_fn) for x in struct)
+  if isinstance(struct, list):
+    return [_nested_map(x, map_fn) for x in struct]
+  if isinstance(struct, dict):
+    return { k: _nested_map(v, map_fn) for k, v in struct.items() }
+  return map_fn(struct)
 
 
 class WaveGradLearner:
-    def __init__(self, model_dir, model, dataset, optimizer, scheduler, params, *args, **kwargs):
-        os.makedirs(model_dir, exist_ok=True)
-        self.model_dir = model_dir
-        self.model = model
-        self.dataset = dataset
-        self.optimizer = optimizer
-        self.scheduler = scheduler
-        self.params = params
-        self.step = 0
-        self.is_master = True
+  def __init__(self, model_dir, model, dataset, optimizer, params, *args, **kwargs):
+    os.makedirs(model_dir, exist_ok=True)
+    self.model_dir = model_dir
+    self.model = model
+    self.dataset = dataset
+    self.optimizer = optimizer
+    self.params = params
+    self.autocast = torch.cuda.amp.autocast(enabled=kwargs.get('fp16', False))
+    self.scaler = torch.cuda.amp.GradScaler(enabled=kwargs.get('fp16', False))
+    self.step = 0
+    self.is_master = True
 
-        beta = np.array(self.params.noise_schedule)
-        noise_level = np.cumprod(1 - beta) ** 0.5
-        noise_level = np.concatenate([[1.0], noise_level], axis=0)
-        self.noise_level = torch.tensor(noise_level.astype(np.float32))
-        self.loss_fn = self.spectral_reconstruction_loss
-        self.summary_writer = None
+    beta = np.array(self.params.noise_schedule)
+    noise_level = np.cumprod(1 - beta)**0.5
+    noise_level = np.concatenate([[1.0], noise_level], axis=0)
+    self.noise_level = torch.tensor(noise_level.astype(np.float32))
+    self.loss_fn = self.spectral_reconstruction_loss
+    self.summary_writer = None
 
-    def state_dict(self):
-        if hasattr(self.model, 'module') and isinstance(self.model.module, nn.Module):
-            model_state = self.model.module.state_dict()
-        else:
-            model_state = self.model.state_dict()
-        return {
-            'step': self.step,
-            'model': {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in model_state.items()},
-            'optimizer': {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in
-                          self.optimizer.state_dict().items()},
-            'params': dict(self.params),
-        }
+  def state_dict(self):
+    if hasattr(self.model, 'module') and isinstance(self.model.module, nn.Module):
+      model_state = self.model.module.state_dict()
+    else:
+      model_state = self.model.state_dict()
+    return {
+        'step': self.step,
+        'model': { k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in model_state.items() },
+        'optimizer': { k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in self.optimizer.state_dict().items() },
+        'params': dict(self.params),
+        'scaler': self.scaler.state_dict(),
+    }
 
-    def load_state_dict(self, state_dict):
-        if hasattr(self.model, 'module') and isinstance(self.model.module, nn.Module):
-            self.model.module.load_state_dict(state_dict['model'])
-        else:
-            self.model.load_state_dict(state_dict['model'])
-        self.optimizer.load_state_dict(state_dict['optimizer'])
-        self.step = state_dict['step']
+  def load_state_dict(self, state_dict):
+    if hasattr(self.model, 'module') and isinstance(self.model.module, nn.Module):
+      self.model.module.load_state_dict(state_dict['model'])
+    else:
+      self.model.load_state_dict(state_dict['model'])
+    self.optimizer.load_state_dict(state_dict['optimizer'])
+    self.scaler.load_state_dict(state_dict['scaler'])
+    self.step = state_dict['step']
 
-    def save_to_checkpoint(self, filename='weights'):
-        save_basename = f'{filename}-{self.step}.pt'
-        save_name = f'{self.model_dir}/{save_basename}'
-        link_name = f'{self.model_dir}/{filename}.pt'
-        torch.save(self.state_dict(), save_name)
-        if os.name == 'nt':
-            torch.save(self.state_dict(), link_name)
-        else:
-            if os.path.islink(link_name):
-                os.unlink(link_name)
-            os.symlink(save_basename, link_name)
+  def save_to_checkpoint(self, filename='weights'):
+    save_basename = f'{filename}-{self.step}.pt'
+    save_name = f'{self.model_dir}/{save_basename}'
+    link_name = f'{self.model_dir}/{filename}.pt'
+    torch.save(self.state_dict(), save_name)
+    if os.name == 'nt':
+      torch.save(self.state_dict(), link_name)
+    else:
+      if os.path.islink(link_name):
+        os.unlink(link_name)
+      os.symlink(save_basename, link_name)
 
-    def restore_from_checkpoint(self, filename='weights'):
-        try:
-            checkpoint = torch.load(f'{self.model_dir}/{filename}.pt')
-            self.load_state_dict(checkpoint)
-            return True
-        except FileNotFoundError:
-            return False
+  def restore_from_checkpoint(self, filename='weights'):
+    try:
+      checkpoint = torch.load(f'{self.model_dir}/{filename}.pt')
+      self.load_state_dict(checkpoint)
+      return True
+    except FileNotFoundError:
+      return False
 
-    def train(self, max_steps=None):
-        device = next(self.model.parameters()).device
-        while True:
-            for features in tqdm(self.dataset,
-                                 desc=f'Epoch {self.step // len(self.dataset)}') if self.is_master else self.dataset:
-                if max_steps is not None and self.step >= max_steps:
-                    return
-                self.optimizer.zero_grad()
-                features = _nested_map(features, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
-                loss = self.train_step(features)
-                if torch.isnan(loss).any():
-                    raise RuntimeError(f'Detected NaN loss at step {self.step}.')
-                if self.is_master:
-                    if self.step % 100 == 0:
-                        self._write_summary(self.step, features, loss)
-                    if self.step % len(self.dataset) == 0:
-                        self.save_to_checkpoint()
-                self.step += 1
+  def train(self, max_steps=None):
+    device = next(self.model.parameters()).device
+    while True:
+      for features in tqdm(self.dataset, desc=f'Epoch {self.step // len(self.dataset)}') if self.is_master else self.dataset:
+        if max_steps is not None and self.step >= max_steps:
+          return
+        self.optimizer.zero_grad()
+        features = _nested_map(features, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
+        loss = self.train_step(features)
+        if torch.isnan(loss).any():
+          raise RuntimeError(f'Detected NaN loss at step {self.step}.')
+        if self.is_master:
+          if self.step % 100 == 0:
+            self._write_summary(self.step, features, loss)
+          if self.step % (10 * len(self.dataset)) == 0:
+            self.save_to_checkpoint()
+        self.step += 1
 
-    def train_step(self, features):
-        for param in self.model.parameters():
-            param.grad = None
+  def train_step(self, features):
+    for param in self.model.parameters():
+      param.grad = None
 
-        audio = features['audio']
-        spectrogram = features['spectrogram']
+    audio = features['audio']
+    spectrogram = features['spectrogram']
 
-        N, T = audio.shape
-        S = 1000
-        device = audio.device
-        self.noise_level = self.noise_level.to(device)
+    N, T = audio.shape
+    S = 1000
+    device = audio.device
+    self.noise_level = self.noise_level.to(device)
 
-        s = torch.randint(1, S + 1, [N], device=audio.device)
-        l_a, l_b = self.noise_level[s - 1], self.noise_level[s]
-        noise_scale = l_a + torch.rand(N, device=audio.device) * (l_b - l_a)
-        noise_scale = noise_scale.unsqueeze(1)
+    with self.autocast:
+      s = torch.randint(1, S + 1, [N], device=audio.device)
+      l_a, l_b = self.noise_level[s - 1], self.noise_level[s]
+      noise_scale = l_a + torch.rand(N, device=audio.device) * (l_b - l_a)
+      noise_scale = noise_scale.unsqueeze(1)
+      noise = torch.randn_like(audio)
+      noise_coef = (1.0 - noise_scale ** 2) ** 0.5
+      noisy_audio = noise_scale * audio + noise_coef * noise
+      eps = 1e-5
+      predicted_noise = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
+      if torch.isnan(predicted_noise).any():
+          print("Found NAN in predicted_noise")
+          print(f'predicted_noise: {predicted_noise}')
+          print(f'noisy_audio: {noisy_audio}')
+          print(f'spectrogram: {spectrogram}')
+          print(f'noise_scale: {noise_scale}')
+      predicted_audio = (noisy_audio - (noise_coef * predicted_noise)) / (noise_scale + eps)
+      loss = self.loss_fn(audio, predicted_audio.squeeze(1))
 
-        noise = torch.randn_like(audio)
-        noise_coef = (1.0 - noise_scale ** 2) ** 0.5
-        noisy_audio = noise_scale * audio + noise_coef * noise
-        eps = 1e-5
-        predicted_noise = self.model(noisy_audio, spectrogram, noise_scale.squeeze(1))
-        if torch.isnan(predicted_noise).any():
-            print("Found NAN in predicted_noise")
-            print(f'predicted_noise: {predicted_noise}')
-            print(f'noisy_audio: {noisy_audio}')
-            print(f'spectrogram: {spectrogram}')
-            print(f'noise_scale: {noise_scale}')
-        predicted_audio = (noisy_audio - (noise_coef * predicted_noise)) / (noise_scale + eps)
-        loss = self.loss_fn(audio, predicted_audio.squeeze(1))
+    self.scaler.scale(loss).backward()
+    self.scaler.unscale_(self.optimizer)
+    print(f'Grad norm after backward: {self.get_gradient_norm()}')
+    self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm)
+    print(f'Grad norm after clip: {self.get_gradient_norm()}')
+    self.scaler.step(self.optimizer)
+    self.scaler.update()
+    return loss
 
-        loss.backward()
-        print(f'Grad norm after backward: {self.get_gradient_norm()}')
-        self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm)
-        print(f'Grad norm after clip: {self.get_gradient_norm()}')
-        self.optimizer.step()
-        # self.scheduler.step()
-        return loss
+  def get_gradient_norm(self):
+      if self.step == 0:
+          return
+      total_norm = 0
+      for p in self.model.parameters():
+          param_norm = p.grad.data.norm(2)
+          total_norm += param_norm.item() ** 2
+      total_norm = total_norm ** (1. / 2)
+      return total_norm
 
-    def get_gradient_norm(self):
-        if self.step == 0:
-            return
-        total_norm = 0
-        for p in self.model.parameters():
-            param_norm = p.grad.data.norm(2)
-            total_norm += param_norm.item() ** 2
-        total_norm = total_norm ** (1. / 2)
-        return total_norm
+  def _write_summary(self, step, features, loss):
+    writer = self.summary_writer or SummaryWriter(self.model_dir, purge_step=step)
+    writer.add_audio('audio/reference', features['audio'][0], step, sample_rate=self.params.sample_rate)
+    writer.add_scalar('train/loss', loss, step)
+    writer.add_scalar('train/grad_norm', self.grad_norm, step)
+    writer.flush()
+    self.summary_writer = writer
 
-    def _write_summary(self, step, features, loss):
-        writer = self.summary_writer or SummaryWriter(self.model_dir, purge_step=step)
-        writer.add_audio('audio/reference', features['audio'][0], step, sample_rate=self.params.sample_rate)
-        writer.add_scalar('train/loss', loss, step)
-        writer.add_scalar('train/grad_norm', self.grad_norm, step)
-        writer.flush()
-        self.summary_writer = writer
-
-    def spectral_reconstruction_loss(self, reference, predicted):
-        if torch.isnan(reference).any():
-            print("Found NAN in reference")
-        if torch.isnan(predicted).any():
-            print("Found NAN in predicted")
-        device = next(self.model.parameters()).device
-        L = 0
-        eps = 1e-4
-        window_lengths = range(6, 12)
-        loss_window_weights = [1e-13, 1e-13, 1e-13, 1e-13, 1e-13]
-        for i, loss_weight in zip(window_lengths, loss_window_weights):
-            s = 2 ** i
-            alpha_s = (s / 2) ** 0.5
-            hop = s // 4
-            f_max = self.params.sample_rate / 2.0
-            melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=64,
-                                     f_min=20.0, f_max=f_max, power=1.0, normalized=True,
-                                     wkwargs={"device": device}).to(device)
-            S_x = melspec(reference)
-            S_G_x = melspec(predicted)
-            if torch.isnan(S_x).any() or torch.isnan(S_G_x).any():
-                print("Found NAN in spectrogram!")
-            loss = loss_weight * ((((S_x - S_G_x).abs().sum()) ** 2) + alpha_s * (
-                    ((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2)).sum())
-            print(f'Loss for window length {s} is {loss}')
-            L += loss
-        return L
+  def spectral_reconstruction_loss(self, reference, predicted):
+      if torch.isnan(reference).any():
+          print("Found NAN in reference")
+      if torch.isnan(predicted).any():
+          print("Found NAN in predicted")
+      device = next(self.model.parameters()).device
+      L = 0
+      eps = 1e-4
+      window_lengths = range(6, 12)
+      loss_window_weights = [1e-13, 1e-13, 1e-13, 1e-13, 1e-13]
+      for i, loss_weight in zip(window_lengths, loss_window_weights):
+          s = 2 ** i
+          alpha_s = (s / 2) ** 0.5
+          hop = s // 4
+          f_max = self.params.sample_rate / 2.0
+          melspec = MelSpectrogram(sample_rate=self.params.sample_rate, n_fft=s, hop_length=hop, n_mels=64,
+                                   f_min=20.0, f_max=f_max, power=1.0, normalized=True,
+                                   wkwargs={"device": device}).to(device)
+          S_x = melspec(reference)
+          S_G_x = melspec(predicted)
+          if torch.isnan(S_x).any() or torch.isnan(S_G_x).any():
+              print("Found NAN in spectrogram!")
+          loss = loss_weight * ((((S_x - S_G_x).abs().sum()) ** 2) + alpha_s * (
+                  ((torch.log(S_x.abs() + eps) - torch.log(S_G_x.abs() + eps)) ** 2).sum(dim=-2)).sum())
+          print(f'Loss for window length {s} is {loss}')
+          L += loss
+      return L
 
 
 def _train_impl(replica_id, model, dataset, args, params, is_distributed):
   torch.backends.cudnn.benchmark = True
   opt = torch.optim.Adam(model.parameters(), lr=params.learning_rate)
-  sched = torch.optim.lr_scheduler.StepLR(opt, step_size=params.sched_step, gamma=params.sched_gamma)
 
-  learner = WaveGradLearner(args.model_dir, model, dataset, opt, sched, params, fp16=args.fp16)
+  learner = WaveGradLearner(args.model_dir, model, dataset, opt, params, fp16=args.fp16)
   learner.is_master = (replica_id == 0) if is_distributed else True
   learner.restore_from_checkpoint()
   learner.train(max_steps=args.max_steps)
@@ -220,12 +221,12 @@ def train(args, params):
 
 
 def train_distributed(replica_id, replica_count, port, args, params):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = str(port)
-    torch.distributed.init_process_group('nccl', rank=replica_id, world_size=replica_count)
+  os.environ['MASTER_ADDR'] = 'localhost'
+  os.environ['MASTER_PORT'] = str(port)
+  torch.distributed.init_process_group('nccl', rank=replica_id, world_size=replica_count)
 
-    device = torch.device('cuda', replica_id)
-    torch.cuda.set_device(device)
-    model = WaveGrad(params).to(device)
-    model = DistributedDataParallel(model, device_ids=[replica_id])
-    _train_impl(replica_id, model, dataset_from_path(args.data_dirs, params, is_distributed=True), args, params, is_distributed=True)
+  device = torch.device('cuda', replica_id)
+  torch.cuda.set_device(device)
+  model = WaveGrad(params).to(device)
+  model = DistributedDataParallel(model, device_ids=[replica_id])
+  _train_impl(replica_id, model, dataset_from_path(args.data_dirs, params, is_distributed=True), args, params, is_distributed=True)
