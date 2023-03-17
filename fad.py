@@ -3,7 +3,6 @@ import numpy as np
 import soundfile as sf
 from scipy import linalg
 import librosa
-import os
 
 
 def _stable_trace_sqrt_product(sigma_test, sigma_train, eps=1e-7):
@@ -70,10 +69,11 @@ def calc_fad(predictions, ground_truth):
 
 
 if __name__ == '__main__':
-    model_results_directory = "./results/griffin-lim"
+    model_results_directory = "./results/recon128"
     eval_files = [
         f"{model_results_directory}/output-The.wav",
         f"{model_results_directory}/output-Pink.wav",
+        f"{model_results_directory}/output-Pyotr.wav",
         f"{model_results_directory}/output-David.wav",
         f"{model_results_directory}/output-Children's.wav",
         f"{model_results_directory}/output-Beethoven.wav",
@@ -86,6 +86,7 @@ if __name__ == '__main__':
     inf_dir = "./music-inf"
     bg_files = [
         f"{inf_dir}/The Well Tempered Clavier, Book I, BWV 846-869 - Fugue No.2 in C minor, BWV 847 Short.flac",
+        f"{inf_dir}/Pyotr Ilyich Tchaikovsky - Swan Lake - No. 14 Scene (Moderato) Short.flac",
         f"{inf_dir}/Pink Floyd - Money - Pink Floyd HD (Studio Version) Short.flac",
         f"{inf_dir}/David Bowie - Changes Short.flac",
         f"{inf_dir}/Children's Corner, L. 113 - I. Doctor Gradus ad Parnassum Short.flac",
